@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QuotationPro</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar"><h1>QuotationPro</h1><p>B2C storage quotation generator <strong>Powered by Zyflox Global</strong></p></header>
+<main class="container">
+<form id="quotationForm" action="/generate" method="post">
+<section class="card"><h2>Quotation details</h2>
+<div class="grid two">
+<label>Quotation date<input type="date" name="quotation_date" value="{{ today }}" required></label>
+<label>Place of supply / city<select id="city" name="city" required><option value="">Loading cities...</option></select></label>
+</div></section>
+<section class="card"><h2>Customer information</h2>
+<div class="grid two">
+<label>Customer name<input name="customer_name" required></label>
+<label>Contact number<input name="customer_cno" required></label>
+<label class="full">Customer address<textarea name="customer_address" rows="3" required></textarea></label>
+<label>Storage date<input type="date" name="storage_date" value="{{ today }}" required></label>
+<label>Product category<input name="product_category" required></label>
+<label>Storage tenure / lock-in period in months <input name="tenure" required></label>
+</div></section>
+<section class="card">
+<h2>Quotation items</h2>
+<p class="hint"></p>
+<div class="item-picker">
+<label>Select item
+<input id="itemSearch" type="text" autocomplete="off" placeholder="Type an item description...">
+</label>
+<button type="button" class="secondary" id="addSelectedItem">+ Add item</button>
+</div>
+<div id="itemSuggestions" class="item-suggestions hidden"></div>
+<p class="hint" id="masterStatus">B2C Mastersheet: loading...</p>
+<div id="items" class="selected-items"></div>
+<input type="hidden" name="items_json" id="items_json">
+<input type="hidden" name="addon_choices_json" id="addon_choices_json" value="{}">
+<input type="hidden" name="logistics_selected" id="logisticsSelected" value="yes">
+
+<section class="card"><h2>Calculated charges</h2>
+<div class="grid two">
+<label>Security deposit<input id="securityDeposit" type="text" readonly value="₹ 0.00"><span class="field-note">Equals the net item amount as Security</span></label>
+<div class="charge-control">
+    <div class="charge-heading">
+        <div class="charge-title">
+            <strong>Logistics charges</strong>
+        </div>
+
+        <input
+            id="logisticsCharge"
+            type="text"
+            readonly
+            value="₹ 0.00"
+        >
+    </div>
+
+    <div class="choice-label">
+        <div
+            class="choice-buttons"
+            role="group"
+            aria-label="Include logistics charges"
+        >
+            <button
+                type="button"
+                class="choice-btn active yes"
+                data-choice="yes"
+                id="logisticsYes"
+            >
+                Yes
+            </button>
+
+            <button
+                type="button"
+                class="choice-btn no"
+                data-choice="no"
+                id="logisticsNo"
+            >
+                No
+            </button>
+        </div>
+    </div>
+</div>
+</div>
+    <h2>Discounts</h2>
+
+    <div class="discount-grid">
+        <label>
+            Storage Discount (%)
+            <input
+                id="storageDiscount"
+                name="storage_discount"
+                type="number"
+                min="0"
+                max="100"
+                value="0"
+            >
+        </label>
+
+        <label>
+            Logistics Discount (%)
+            <input
+                id="logisticsDiscount"
+                name="logistics_discount"
+                type="number"
+                min="0"
+                max="100"
+                value="0"
+            >
+        </label>
+    </div>
+<h3>Add-on services </h3>
+<div id="addons" class="addon-list"><p class="hint">Add-ons will appear automatically when item flags trigger them.</p></div>
+</section>
+<section class="card"><h2>Token booking amount</h2>
+<label>Token booking amount (₹)<input name="token_amount" type="number" value="500" readonly></label>
+</section>
+<section class="card summary"><button type="submit">Generate quotation</button></section>
+</form></main>
+<script>
+const itemSearch = document.getElementById('itemSearch');
+const itemSuggestions = document.getElementById('itemSuggestions');
+const itemContainer = document.getElementById('items');
+const itemsJson = document.getElementById('items_json');
+const addonChoicesJson = document.getElementById('addon_choices_json');
+const masterStatus = document.getElementById('masterStatus');
+const citySelect = document.getElementById('city');
+const logisticsCharge = document.getElementById('logisticsCharge');
+const logisticsYes = document.getElementById('logisticsYes');
+const logisticsNo = document.getElementById('logisticsNo');
+const logisticsSelectedInput = document.getElementById('logisticsSelected');
+let logisticsSelected = 'yes';
+const securityDeposit = document.getElementById('securityDeposit');
+const addonsContainer = document.getElementById('addons');
+let masterItems = [];
+let cities = [];
+let selectedItemDescription = '';
+let previewRequestId = 0;
+let addonChoices = {};
+
+function currency(value) {
+  return new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR'}).format(Number(value)||0);
+}
+function esc(v) {
+  return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+}
+function selectedDescriptions() {
+  return new Set([...itemContainer.querySelectorAll('.item-row')].map(r=>r.dataset.description));
+}
+function findMasterItem(description) {
+  return masterItems.find(x=>x.description===description);
+}
+function renderSuggestions(query='') {
+  const q=query.trim().toLowerCase();
+  const selected=selectedDescriptions();
+  const matches=masterItems.filter(x=>!selected.has(x.description) && (!q || x.description.toLowerCase().includes(q)));
+  if(!matches.length){
+    itemSuggestions.innerHTML='<div class="suggestion-empty">No matching items found.</div>';
+    itemSuggestions.classList.remove('hidden');
+    return;
+  }
+  itemSuggestions.innerHTML=matches.map(x=>`<button type="button" class="suggestion" data-description="${esc(x.description)}">${esc(x.description)}</button>`).join('');
+  itemSuggestions.classList.remove('hidden');
+  itemSuggestions.querySelectorAll('.suggestion').forEach(btn=>btn.addEventListener('click',()=>{
+    selectedItemDescription=btn.dataset.description;
+    itemSearch.value=selectedItemDescription;
+    itemSuggestions.classList.add('hidden');
+  }));
+}
+function renderRow(item) {
+  const row=document.createElement('div');
+  row.className='item-row';
+  row.dataset.description=item.description;
+  row.innerHTML=`<div class="item-number"></div>
+    <div class="item-detail"><span>Description</span><strong>${esc(item.description)}</strong></div>
+    <label class="item-detail qty-input"><span>Qty</span><input class="item-qty" type="number" min="1" step="1" value="1"></label>
+    <div class="line-box"></div>
+    <button type="button" class="remove">Remove</button>`;
+  row.querySelector('.item-qty').addEventListener('input',()=>updateTotals());
+  row.querySelector('.remove').addEventListener('click',()=>{row.remove();renumber();updateTotals();});
+  itemContainer.appendChild(row);
+  renumber();
+  updateTotals();
+}
+function renumber(){
+  [...itemContainer.querySelectorAll('.item-row')].forEach((r,i)=>r.querySelector('.item-number').textContent=`#${i+1}`);
+}
+function collectItems(){
+  return [...itemContainer.querySelectorAll('.item-row')].map(r=>({
+    description:r.dataset.description,
+    qty:Number(r.querySelector('.item-qty').value||0)
+  }));
+}
+function syncHiddenFields(items){
+  itemsJson.value = JSON.stringify(items);
+  addonChoicesJson.value = JSON.stringify(addonChoices);
+  if (logisticsSelectedInput) logisticsSelectedInput.value = logisticsSelected;
+}
+function cleanupAddonChoices(addons){
+  const valid = new Set(addons.map(a=>a.id));
+  Object.keys(addonChoices).forEach(id=>{ if(!valid.has(id)) delete addonChoices[id]; });
+}
+
+async function updateTotals(){
+  const items = collectItems();
+syncHiddenFields(items);
+
+if (!items.length) {
+  securityDeposit.value = currency(0);
+  logisticsCharge.value =
+    logisticsSelected === 'no' ? 'Self drop' : currency(0);
+
+  renderAddons([]);
+  return;
+}
+
+if (!citySelect.value) return;
+
+const requestId = ++previewRequestId;
+
+try {
+
+  // ------------------------------------------
+  // GET DISCOUNTS FROM FRONTEND
+  // ------------------------------------------
+  const storageDiscountInput =
+    document.getElementById('storageDiscount');
+
+  const logisticsDiscountInput =
+    document.getElementById('logisticsDiscount');
+
+  const storageDiscount = Math.min(
+    100,
+    Math.max(
+      0,
+      Number(storageDiscountInput?.value || 0)
+    )
+  );
+
+  const logisticsDiscount = Math.min(
+    100,
+    Math.max(
+      0,
+      Number(logisticsDiscountInput?.value || 0)
+    )
+  );
+
+
+  // ------------------------------------------
+  // SEND DATA TO BACKEND
+  // ------------------------------------------
+  const body = new URLSearchParams({
+
+    items_json: JSON.stringify(items),
+
+    city: citySelect.value,
+
+    logistics_selected: logisticsSelected,
+
+    addon_choices_json: JSON.stringify(addonChoices),
+
+    // NEW
+    storage_discount: String(storageDiscount),
+
+    // NEW
+    logistics_discount: String(logisticsDiscount)
+  });
+
+
+  const response = await fetch('/api/preview', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body
+  });
+
+
+  const data = await response.json();
+
+  if (requestId !== previewRequestId) return;
+
+  if (!response.ok || data.error) {
+    throw new Error(
+      data.error || 'Unable to calculate quotation.'
+    );
+  }
+
+
+  // ------------------------------------------
+  // SECURITY DEPOSIT
+  // ------------------------------------------
+  securityDeposit.value =
+    currency(data.security_deposit);
+
+
+  // ------------------------------------------
+  // LOGISTICS
+  // ------------------------------------------
+  logisticsCharge.value =
+    data.logistics_selected
+      ? currency(data.logistics_charge)
+      : 'Self drop';
+
+
+  // ------------------------------------------
+  // ADD-ONS
+  // ------------------------------------------
+  cleanupAddonChoices(data.addons || []);
+
+  (data.addons || []).forEach(a => {
+
+    if (!(a.id in addonChoices)) {
+      addonChoices[a.id] = 'yes';
+    }
+
+  });
+
+  syncHiddenFields(items);
+
+  renderAddons(data.addons || []);
+
+
+  // ------------------------------------------
+  // STATUS
+  // ------------------------------------------
+  masterStatus.textContent =
+    `B2C Mastersheet loaded: ${masterItems.length} item(s), ${cities.length} city/cities.`;
+
+  masterStatus.classList.remove('error-text');
+
+
+} catch (e) {
+
+  if (requestId !== previewRequestId) return;
+
+  console.error(
+    'Preview calculation error:',
+    e
+  );
+
+  masterStatus.textContent =
+    e.message ||
+    'Unable to calculate quotation.';
+
+  masterStatus.classList.add(
+    'error-text'
+  );
+}
+}
+
+function renderAddons(addons){
+  if(!addons.length){
+    addonsContainer.innerHTML='<p class="hint">No add-on services triggered.</p>';
+    return;
+  }
+  addonsContainer.innerHTML=addons.map((a,i)=>{
+    const selected = addonChoices[a.id] !== 'no';
+    return `<div class="addon-row ${selected?'':'addon-excluded'}">
+      <div><strong>${i+1}. ${esc(a.description)}</strong><small>${selected?'Included in quotation':'Excluded from quotation'}</small></div>
+      <div>Qty: ${esc(a.qty)}</div>
+      <div>${currency(a.amount)}</div>
+      <div class="addon-choice"><span></span><div class="choice-buttons" role="group" aria-label="Include ${esc(a.description)}"><button type="button" class="choice-btn yes ${selected?'active':''}" data-addon-id="${esc(a.id)}" data-choice="yes">Yes</button><button type="button" class="choice-btn no ${selected?'':'active'}" data-addon-id="${esc(a.id)}" data-choice="no">No</button></div></div>
+    </div>`;
+  }).join('');
+
+  addonsContainer.querySelectorAll('.choice-btn[data-addon-id]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const id=btn.dataset.addonId;
+      addonChoices[id]=btn.dataset.choice;
+      const group=btn.parentElement;
+      group.querySelectorAll('.choice-btn').forEach(b=>b.classList.toggle('active',b.dataset.choice===btn.dataset.choice));
+      renderAddons(addons);
+      updateTotals();
+    });
+  });
+}
+function addCurrentItem(){
+  const description=(selectedItemDescription || itemSearch.value).trim();
+  const item=findMasterItem(description);
+  if(!item){alert('Select an item description from the B2C Mastersheet.');renderSuggestions(itemSearch.value);return;}
+  if(selectedDescriptions().has(description)){alert('This item is already selected.');return;}
+  renderRow(item);
+  selectedItemDescription='';
+  itemSearch.value='';
+  itemSuggestions.classList.add('hidden');
+}
+document.getElementById('addSelectedItem').addEventListener('click',addCurrentItem);
+itemSearch.addEventListener('focus',()=>renderSuggestions(itemSearch.value));
+itemSearch.addEventListener('input',()=>{selectedItemDescription='';renderSuggestions(itemSearch.value);});
+itemSearch.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addCurrentItem();}});
+document.addEventListener('click',e=>{if(!e.target.closest('.item-picker') && !e.target.closest('#itemSuggestions'))itemSuggestions.classList.add('hidden');});
+citySelect.addEventListener('change',updateTotals);
+function setLogisticsChoice(choice){
+  logisticsSelected = choice === 'no' ? 'no' : 'yes';
+  logisticsSelectedInput.value = logisticsSelected;
+  logisticsYes.classList.toggle('active', logisticsSelected === 'yes');
+  logisticsNo.classList.toggle('active', logisticsSelected === 'no');
+  logisticsCharge.value = logisticsSelected === 'no' ? 'Self drop' : currency(0);
+  syncHiddenFields(collectItems());
+  updateTotals();
+}
+logisticsYes.addEventListener('click',(e)=>{ e.preventDefault(); setLogisticsChoice('yes'); });
+logisticsNo.addEventListener('click',(e)=>{ e.preventDefault(); setLogisticsChoice('no'); });
+document.getElementById('quotationForm').addEventListener('submit',e=>{
+  if(!itemContainer.querySelector('.item-row')){e.preventDefault();alert('Please select at least one item.');return;}
+  setLogisticsChoice(logisticsSelected);
+  syncHiddenFields(collectItems());
+});
+async function loadMaster(){
+  masterStatus.textContent='B2C Mastersheet: loading...';
+  try{
+    const response=await fetch('/api/master-data',{cache:'no-store'});
+    const data=await response.json();
+    if(!response.ok || data.error) throw new Error(data.error || 'Unable to load B2C Mastersheet.');
+    masterItems=Array.isArray(data.items)?data.items:[];
+    cities=Array.isArray(data.cities)?data.cities:[];
+    citySelect.innerHTML='<option value="">-- Select city --</option>'+cities.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    if(!masterItems.length) throw new Error('B2C Mastersheet loaded, but no item descriptions were returned from the Main tab.');
+    masterStatus.textContent=`B2C Mastersheet loaded: ${masterItems.length} item(s), ${cities.length} city/cities.`;
+    masterStatus.classList.remove('error-text');
+  }catch(e){
+    masterStatus.textContent=e.message;
+    masterStatus.classList.add('error-text');
+    console.error('Master data error:',e);
+  }
+}
+document
+  .getElementById('storageDiscount')
+  ?.addEventListener('input', updateTotals);
+
+document
+  .getElementById('logisticsDiscount')
+  ?.addEventListener('input', updateTotals);
+loadMaster();
+</script>
+</body></html>
