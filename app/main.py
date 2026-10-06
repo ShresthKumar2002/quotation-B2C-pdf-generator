@@ -387,6 +387,7 @@ def calculate_quote(data: dict) -> dict:
         })
 
     subtotal = money(subtotal)
+    if subtotal<500: subtotal = money(500)
 
 # ==========================================
 # STORAGE DISCOUNT
