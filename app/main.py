@@ -534,7 +534,7 @@ def build_replacements(data: dict, calc: dict) -> dict[str, str]:
         "{{tenure}}": data["tenure"],
         "{{Titem.amount}}": f"₹ {calc['subtotal']:,.2f}",
         "{{Titem.amount}}": f"₹ {calc['subtotal']:,.2f}",
-        "{{s_discount}}":data["storage_discount"],
+        "{{s_discount}}":(f"{calc['storage_discount']:,.2f}%" if calc["storage_discount"] > 0 else "-")
         "{{Titemd.amount}}": f"₹ {calc['discounted_storage_subtotal']:,.2f}",
         "{{ Titem.amout }}": f"₹ {calc['subtotal']:,.2f}",
         "{{Titem.amout}}": f"₹ {calc['subtotal']:,.2f}",
@@ -545,7 +545,7 @@ def build_replacements(data: dict, calc: dict) -> dict[str, str]:
         "{{ item.amout }}": f"₹ {calc['security_deposit']:,.2f}",
         "{{ item.amount }}": f"₹ {calc['security_deposit']:,.2f}",
         "{{packing_charge}}": (f"₹ {calc['logistics_charge']:,.2f}" if calc["logistics_selected"] else "Self drop"),
-        "{{l_discount}}":data["logistics_discount"],
+        "{{l_discount}}":(f"{calc['logistics_discount']:,.2f}%" if calc["logistics_selected"] else "-"),
         "{{packingd_charge}}": (f"₹ {calc['applied_logistics_charge']:,.2f}" if calc["logistics_selected"] else "Self drop"),
         "{{special.gst}}": f"₹ {calc['addon_gst']:,.2f}",
         "{{special.total}}": f"₹ {calc['addon_total']:,.2f}",
