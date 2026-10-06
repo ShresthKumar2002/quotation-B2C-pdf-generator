@@ -545,7 +545,7 @@ def build_replacements(data: dict, calc: dict) -> dict[str, str]:
         "{{ item.amount }}": f"₹ {calc['security_deposit']:,.2f}",
         "{{packing_charge}}": (f"₹ {calc['logistics_charge']:,.2f}" if calc["logistics_selected"] else "Self drop"),
         "{{l_discount}}":data["logistics_discount"],
-        "{{packingd_charge}}": (f"₹ {calc['applied_logistics_charge']:,.2f}" if calc["logistics_selected"] else "-"),
+        "{{packingd_charge}}": (f"₹ {calc['applied_logistics_charge']:,.2f}" if calc["logistics_selected"] else "Self drop"),
         "{{special.gst}}": f"₹ {calc['addon_gst']:,.2f}",
         "{{special.total}}": f"₹ {calc['addon_total']:,.2f}",
         "{{special.amount}}": f"₹ {calc['addon_subtotal']:,.2f}",
