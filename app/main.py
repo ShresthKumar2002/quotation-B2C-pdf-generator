@@ -534,7 +534,7 @@ def build_replacements(data: dict, calc: dict) -> dict[str, str]:
         "{{tenure}}": data["tenure"],
         "{{Titem.amount}}": f"₹ {calc['subtotal']:,.2f}",
         "{{Titem.amount}}": f"₹ {calc['subtotal']:,.2f}",
-        "{{s_discount}}":(f"{calc['storage_discount']:,.2f}%" if calc["storage_discount"] > 0 else "-")
+        "{{s_discount}}":(f"{calc['storage_discount']:,.2f}%" if calc["storage_discount"] > 0 else "-"),
         "{{Titemd.amount}}": f"₹ {calc['discounted_storage_subtotal']:,.2f}",
         "{{ Titem.amout }}": f"₹ {calc['subtotal']:,.2f}",
         "{{Titem.amout}}": f"₹ {calc['subtotal']:,.2f}",
